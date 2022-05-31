@@ -23,7 +23,7 @@ func Run() {
 		multipart  bool
 		operations []rune
 		wav        Freq.Wave
-		filter     = make(map[string]interface{})
+		options    = make(map[string]interface{})
 	)
 
 	for i := range args {
@@ -62,7 +62,7 @@ func Run() {
 		case "-D": //DCT
 			operations = append(operations, 'D')
 
-			filter["histogram"] = true
+			options["histogram"] = true
 		case "-F": //filter
 			operations = append(operations, 'F')
 
@@ -72,7 +72,8 @@ func Run() {
 
 			multipart = true
 		case "-C": //compression
-			operations = append(operations, 'C')
+
+			operations = append(operations, 'F')
 
 			if i+1 > len(args) {
 				Exit("error: digite a frequência de corte")
@@ -84,13 +85,19 @@ func Run() {
 					Exit(err.Error())
 				}
 
-				filter["cutFrequency"] = &cf
+				options["cutFrequency"] = &cf
+
+				delete(options, "histogram")
+			} else {
+				Exit("error: frequencia inválida")
 			}
 
-			delete(filter, "histogram")
-
 			multipart = true
+
+		case "DEBUG":
+			operations = append(operations, 'Z')
 		}
+
 	}
 
 	if wav == nil {
@@ -100,18 +107,24 @@ func Run() {
 	for _, v := range operations {
 		switch v {
 		case 'D':
-			if _, ok := filter["cutFrequency"]; ok && (*filter["cutFrequency"].(*int) < 0 ||
-				*filter["cutFrequency"].(*int) >
-					(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)) {
-
-				Exit("error: frequência de corte maior que o número de amostas")
-			}
-			wav = wav.DCT(filter)
+			freq := wav.DCT(options)
+			wav.(*image.Image).Image = freq.ToGray()
+			wav.(*image.Image).Name = freq.Filename
 		case 'F':
+			if cf, ok := options["cutFrequency"]; ok && (*cf.(*int) < 0 || *cf.(*int) >
+				(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)) {
+
+				Exit("error: frequência de corte maior que o número de amostras")
+			}
+
+			wav.(*image.Image).IDCT(wav.DCT(options))
 
 		case 'C':
 
+		case 'Z':
+			wav.(*image.Image).IDCT(wav.DCT(options))
 		}
+
 	}
 
 	if err = image.SaveImage(*wav.(*image.Image)); err != nil {

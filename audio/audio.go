@@ -11,7 +11,12 @@ func (a *Audio) Open(path string) (err error) {
 	return nil
 }
 
-func (a *Audio) DCT(args map[string]interface{}) Freq.Wave {
+func (a *Audio) DCT(args map[string]interface{}) *Freq.Frequencies {
 
-	return a
+	return &Freq.Frequencies{}
+}
+
+func (a *Audio) IDCT(freq *Freq.Frequencies) Freq.Wave {
+
+	return &Audio{}
 }
