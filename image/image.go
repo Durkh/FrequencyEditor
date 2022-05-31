@@ -95,13 +95,6 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 		res     = Freq.NewFreq(bounds.Max.Y, bounds.Max.X, i.Name+"_DCT_")
 
 		cf *int
-
-		//DCT's constant terms
-		ft float64
-		N  int
-
-		//n loop limits
-		lim limits
 	)
 
 	if _, ok := args["cutFrequency"]; ok {
@@ -109,9 +102,6 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 	}
 
 	//horizontal DCT
-	N = bounds.Max.X
-	ft = math.Sqrt(2 / float64(N))
-	lim = limits{low: bounds.Min.X, high: N}
 	//in this case: outer = Y; inner = X
 	iterate(bounds, func(inner int, outer int) {
 
@@ -125,25 +115,21 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 			return float64(i.Image.At(*index, outer).(color.Gray).Y)
 		}
 
-		DCT1d(inner, N, ft, lim, accessFunc, assignFunc, func(val float64) {})
+		DCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), limits{low: bounds.Min.X, high: bounds.Max.X},
+			accessFunc, assignFunc, func(val float64) {})
 	})
 
 	//vertical DCT
-	N = bounds.Max.Y
-	ft = math.Sqrt(2 / float64(N))
-	lim = limits{low: bounds.Min.Y, high: N}
 	//inverting image iteration
 	b := im.Rect(
 		bounds.Min.Y, bounds.Min.X,
 		bounds.Max.Y, bounds.Max.X,
 	)
-
 	//in this case: outer = X; inner = Y
 	iterate(b, func(inner int, outer int) {
 
-		var assignFunc func(val *float64)
-
-		assignFunc = func(val *float64) {
+		assignFunc := func(val *float64) {
+			//to show the coefficients we need to get their norm
 			if noDC {
 				*val = math.Abs(*val)
 			}
@@ -156,14 +142,18 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 			return partial.Data2D[*index][outer]
 		}
 
+		//don't get the DC value as maximum
 		if outer == 0 && inner == 0 {
-			DCT1d(inner, N, ft, lim, accessFunc, assignFunc, func(val float64) {})
+			DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+				accessFunc, assignFunc, func(val float64) {})
 			return
 		}
 
-		DCT1d(inner, N, ft, lim, accessFunc, assignFunc, minMaxFunc)
+		DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+			accessFunc, assignFunc, minMaxFunc)
 	})
 
+	//removal of frequencies data
 	if cf != nil {
 		Y := int(math.Floor(float64(*cf) / float64(bounds.Max.X)))
 		X := *cf - (Y * bounds.Max.X)
@@ -193,19 +183,9 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 		bounds = i.Image.Bounds()
 
 		partial = Freq.NewFreq(bounds.Max.Y, bounds.Max.X)
-
-		//DCT's constant terms
-		ft float64
-		N  int
-
-		//n loop limits
-		lim limits
 	)
 
 	//horizontal DCT
-	N = bounds.Max.X
-	ft = math.Sqrt(2 / float64(N))
-	lim = limits{low: bounds.Min.X, high: N}
 	//in this case: outer = Y; inner = X
 	iterate(bounds, func(inner int, outer int) {
 
@@ -219,13 +199,11 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 			return freq.Data2D[outer][*index]
 		}
 
-		IDCT1d(inner, N, ft, lim, accessFunc, assignFunc)
+		IDCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), limits{low: bounds.Min.X, high: bounds.Max.X},
+			accessFunc, assignFunc)
 	})
 
 	//vertical DCT
-	N = bounds.Max.Y
-	ft = math.Sqrt(2 / float64(N))
-	lim = limits{low: bounds.Min.Y, high: N}
 	//inverting image iteration
 	b := im.Rect(
 		bounds.Min.Y, bounds.Min.X,
@@ -235,15 +213,15 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 	iterate(b, func(inner int, outer int) {
 
 		assignFunc := func(val *float64) {
-			//rawVal[Y][X] = val
 			*val = math.Round(*val)
 			if *val < 0 {
-				//*val = 0
+				*val = 0
 			}
 			if *val > 0xff {
-				//*val = 0xff
+				*val = 0xff
 			}
 
+			//rawVal[Y][X] = val
 			freq.Data2D[inner][outer] = *val
 		}
 
@@ -252,7 +230,8 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 			return partial.Data2D[*index][outer]
 		}
 
-		IDCT1d(inner, N, ft, lim, accessFunc, assignFunc)
+		IDCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+			accessFunc, assignFunc)
 	})
 
 	i.Image = freq.ToGray()
@@ -306,122 +285,6 @@ func IDCT1d(n, N int, ft float64, bounds limits, access func(*int) float64, assi
 	//constant part
 	res = ft * sum
 	assign(&res)
-}
-
-//TODO remove later
-func (i Image) DCT2D(args map[string]interface{}) Freq.Wave {
-
-	var (
-		//histogram min/max
-		min, max    = math.MaxFloat64, -math.MaxFloat64
-		minMaxMutex sync.Mutex
-		minMaxFunc  = func(val float64) {}
-		noDC        bool
-	)
-
-	//variable changes for removal of DC signal and histogram expansion
-	if _, noDC = args["histogram"]; noDC {
-		minMaxFunc = func(val float64) {
-			minMaxMutex.Lock()
-
-			if val < min {
-				min = val
-			}
-			if val > max {
-				max = val
-			}
-
-			minMaxMutex.Unlock()
-		}
-
-	}
-
-	var (
-		freqIM = Image{
-			Image: i.Image,
-			Name:  i.Name + "_DCT",
-		}
-
-		bounds = freqIM.Image.Bounds()
-
-		//DCT's constant terms
-		ft float64
-		N  int
-
-		//raw DCT values, pre histogram expansion
-		rawValues = make([][]float64, bounds.Max.Y)
-	)
-
-	iterate(im.Rect(0, 0, len(rawValues), 1), func(x int, y int) {
-		rawValues[x] = make([]float64, bounds.Max.X)
-		for itr := i.Image.Bounds().Min.X; itr < i.Image.Bounds().Max.X; itr++ {
-			rawValues[x][itr] = float64(i.Image.At(itr, x).(color.Gray).Y)
-		}
-	})
-
-	N = i.Image.Bounds().Max.X
-	ft = math.Sqrt(2 / float64(N))
-	for itrY := i.Image.Bounds().Min.Y; itrY < i.Image.Bounds().Max.Y; itrY++ {
-		for itrX := i.Image.Bounds().Min.X; itrX < i.Image.Bounds().Max.X; itrX++ {
-			var (
-				pixConst         = math.Pi * float64(itrX) / float64(N)
-				Ck       float64 = 1
-				sum      float64
-			)
-
-			if itrX == 0 {
-				Ck = math.Sqrt(1. / 2.)
-			}
-
-			for n := i.Image.Bounds().Min.X; n < i.Image.Bounds().Max.X; n++ {
-				sum += float64(i.Image.At(n, itrY).(color.Gray).Y) * math.Cos(pixConst*(float64(n)+.5))
-			}
-
-			rawValues[itrY][itrX] = ft * Ck * sum
-		}
-	}
-
-	N = i.Image.Bounds().Max.Y
-	ft = math.Sqrt(2 / float64(N))
-	for itrX := i.Image.Bounds().Min.X; itrX < i.Image.Bounds().Max.X; itrX++ {
-		for itrY := i.Image.Bounds().Min.Y; itrY < i.Image.Bounds().Max.Y; itrY++ {
-			var (
-				pixConst         = math.Pi * float64(itrY) / float64(N)
-				Ck       float64 = 1
-				sum      float64
-			)
-
-			if itrY == 0 {
-				Ck = math.Sqrt(1. / 2.)
-			}
-
-			for n := i.Image.Bounds().Min.Y; n < i.Image.Bounds().Max.Y; n++ {
-				sum += rawValues[n][itrX] * math.Cos(pixConst*(float64(n)+.5))
-			}
-
-			rawValues[itrY][itrX] = math.Abs(ft * Ck * sum)
-
-			if itrX == 0 && itrY == 0 {
-				continue
-			}
-
-			minMaxFunc(rawValues[itrY][itrX])
-		}
-	}
-
-	//histogram expansion
-	if noDC {
-		histExpansion(min, max, rawValues)
-	}
-
-	rawValues[0][0] = 0xff
-
-	//set
-	iterate(bounds, func(x int, y int) {
-		freqIM.Image.(*im.Gray).Set(x, y, color.Gray{Y: uint8(rawValues[y][x])})
-	})
-
-	return &freqIM
 }
 
 type limits struct {
