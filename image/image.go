@@ -3,6 +3,7 @@ package image
 import (
 	"errors"
 	"github.com/Durkh/FrequencyEditor/Freq"
+	"github.com/Durkh/FrequencyEditor/culling"
 	"golang.org/x/image/tiff"
 	im "image"
 	"image/color"
@@ -155,18 +156,9 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 	//removal of frequencies data
 	if cf != nil {
-		Y := int(math.Floor(float64(*cf) / float64(bounds.Max.X)))
-		X := *cf - (Y * bounds.Max.X)
+		culling.Cull(*cf, res.Data2D)
 
-		for itr := X; itr < bounds.Max.X; itr++ {
-			res.Data2D[Y][itr] = 0
-		}
-
-		for itr := Y + 1; itr < len(res.Data2D); itr++ {
-			res.Data2D[itr] = make([]float64, len(res.Data2D[0]))
-		}
-
-		res.Filename += "CF_"
+		res.Filename += "CF_[" + strconv.Itoa(*cf) + "]"
 	}
 
 	//histogram expansion
@@ -235,6 +227,7 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 	})
 
 	i.Image = freq.ToGray()
+	i.Name = freq.Filename
 
 	return i
 }

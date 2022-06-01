@@ -67,13 +67,26 @@ func Run() {
 			operations = append(operations, 'F')
 
 			if i+1 > len(args) {
-				Exit("error: digite o caminho do filtro")
+				Exit("error: digite a frequência de corte")
+			}
+
+			if ok, _ := regexp.MatchString(`^\[\d+]$`, args[i+1]); ok {
+				cf, err := strconv.Atoi(strings.Trim(args[i+1], "[]"))
+				if err != nil {
+					Exit(err.Error())
+				}
+
+				options["cutFrequency"] = &cf
+
+				delete(options, "histogram")
+			} else {
+				Exit("error: frequencia inválida")
 			}
 
 			multipart = true
 		case "-C": //compression
 
-			operations = append(operations, 'F')
+			operations = append(operations, 'C')
 
 			if i+1 > len(args) {
 				Exit("error: digite a frequência de corte")
@@ -111,15 +124,22 @@ func Run() {
 			wav.(*image.Image).Image = freq.ToGray()
 			wav.(*image.Image).Name = freq.Filename
 		case 'F':
+
 			if cf, ok := options["cutFrequency"]; ok && (*cf.(*int) < 0 || *cf.(*int) >
 				(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)) {
 
 				Exit("error: frequência de corte maior que o número de amostras")
 			}
 
-			wav.(*image.Image).IDCT(wav.DCT(options))
-
 		case 'C':
+
+			if cf, ok := options["cutFrequency"]; ok && (*cf.(*int) < 0 || *cf.(*int) >
+				(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)-1) {
+
+				Exit("error: frequência de corte maior que o número de amostras")
+			}
+
+			wav.(*image.Image).IDCT(wav.DCT(options))
 
 		case 'Z':
 			wav.(*image.Image).IDCT(wav.DCT(options))
