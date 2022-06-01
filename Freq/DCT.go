@@ -3,6 +3,7 @@ package Freq
 import (
 	"image"
 	"image/color"
+	"math"
 	"runtime"
 	"sync"
 )
@@ -54,6 +55,22 @@ func (f *Frequencies) ToGray() (im *image.Gray) {
 	})
 
 	return
+}
+
+func (f *Frequencies) ApplyFilter(cf, order int) {
+
+	var (
+		distance = func(x, y int) float64 {
+			return math.Sqrt(float64(x*x + y*y))
+		}
+
+		butterworth = func(x, y int) {
+			f.Data2D[y][x] *= 1 / (math.Sqrt(1 + math.Pow(distance(x, y)/float64(cf), float64(2*order))))
+		}
+	)
+
+	iterate(limits{X: len(f.Data2D[0]), Y: len(f.Data2D)}, butterworth)
+
 }
 
 type limits = struct {

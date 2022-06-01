@@ -63,6 +63,12 @@ func (i *Image) Open(path string) (err error) {
 	return
 }
 
+const (
+	optionHistogram byte = iota
+	optionCulling
+	optionButterwoth
+)
+
 func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 	var (
@@ -70,11 +76,11 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 		min, max    = math.MaxFloat64, -math.MaxFloat64
 		minMaxMutex sync.Mutex
 		minMaxFunc  = func(val float64) {}
-		noDC        bool
+		option      byte
 	)
 
 	//variable changes for removal of DC signal and histogram expansion
-	if _, noDC = args["histogram"]; noDC {
+	if _, ok := args["histogram"]; ok {
 		minMaxFunc = func(val float64) {
 			minMaxMutex.Lock()
 
@@ -87,6 +93,8 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 			minMaxMutex.Unlock()
 		}
+
+		option = optionHistogram
 	}
 
 	var (
@@ -95,11 +103,19 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 		partial = Freq.NewFreq(bounds.Max.Y, bounds.Max.X)
 		res     = Freq.NewFreq(bounds.Max.Y, bounds.Max.X, i.Name+"_DCT_")
 
-		cf *int
+		cf, order int
 	)
 
-	if _, ok := args["cutFrequency"]; ok {
-		cf = args["cutFrequency"].(*int)
+	if v, ok := args["cutFrequency"]; ok {
+		cf = v.(int)
+
+		if v, ok = args["order"]; ok {
+			order = v.(int)
+			option = optionButterwoth
+		} else {
+			option = optionCulling
+		}
+
 	}
 
 	//horizontal DCT
@@ -131,7 +147,7 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 		assignFunc := func(val *float64) {
 			//to show the coefficients we need to get their norm
-			if noDC {
+			if option == optionHistogram {
 				*val = math.Abs(*val)
 			}
 			//rawVal[Y][X] = val
@@ -154,16 +170,15 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 			accessFunc, assignFunc, minMaxFunc)
 	})
 
-	//removal of frequencies data
-	if cf != nil {
-		culling.Cull(*cf, res.Data2D)
-
-		res.Filename += "CF_[" + strconv.Itoa(*cf) + "]"
-	}
-
-	//histogram expansion
-	if noDC {
+	switch option {
+	case optionHistogram: //histogram expansion
 		histExpansion(min, max, res.Data2D)
+	case optionCulling: //culling of frequencies data
+		culling.Cull(cf, res.Data2D)
+		res.Filename += "CF_[" + strconv.Itoa(cf) + "]"
+	case optionButterwoth:
+		res.ApplyFilter(cf, order)
+		res.Filename += "BUTTERWORTH_[" + strconv.Itoa(cf) + "," + strconv.Itoa(order) + "]"
 	}
 
 	return res

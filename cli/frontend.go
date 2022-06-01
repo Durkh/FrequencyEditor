@@ -5,6 +5,7 @@ import (
 	"github.com/Durkh/FrequencyEditor/Freq"
 	"github.com/Durkh/FrequencyEditor/audio"
 	"github.com/Durkh/FrequencyEditor/image"
+	"math"
 	"os"
 	"regexp"
 	"strconv"
@@ -70,13 +71,24 @@ func Run() {
 				Exit("error: digite a frequência de corte")
 			}
 
-			if ok, _ := regexp.MatchString(`^\[\d+]$`, args[i+1]); ok {
-				cf, err := strconv.Atoi(strings.Trim(args[i+1], "[]"))
+			if ok, _ := regexp.MatchString(`^\[\d+;\d+]$`, args[i+1]); ok {
+				aux := strings.FieldsFunc(strings.Trim(args[i+1], "[]"), func(r rune) bool {
+					return r == ';'
+				})
+
+				var cf, order int
+
+				cf, err = strconv.Atoi(aux[0])
+				if err != nil {
+					Exit(err.Error())
+				}
+				order, err = strconv.Atoi(aux[1])
 				if err != nil {
 					Exit(err.Error())
 				}
 
-				options["cutFrequency"] = &cf
+				options["cutFrequency"] = cf
+				options["order"] = order
 
 				delete(options, "histogram")
 			} else {
@@ -123,17 +135,20 @@ func Run() {
 			freq := wav.DCT(options)
 			wav.(*image.Image).Image = freq.ToGray()
 			wav.(*image.Image).Name = freq.Filename
+
 		case 'F':
 
-			if cf, ok := options["cutFrequency"]; ok && (*cf.(*int) < 0 || *cf.(*int) >
-				(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)) {
+			if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || float64(cf.(int)) >
+				math.Sqrt(math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.X), 2)+
+					math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.Y), 2))) {
 
 				Exit("error: frequência de corte maior que o número de amostras")
 			}
 
+			wav.(*image.Image).IDCT(wav.DCT(options))
 		case 'C':
 
-			if cf, ok := options["cutFrequency"]; ok && (*cf.(*int) < 0 || *cf.(*int) >
+			if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || cf.(int) >
 				(wav.(*image.Image).Image.Bounds().Max.X*wav.(*image.Image).Image.Bounds().Max.Y)-1) {
 
 				Exit("error: frequência de corte maior que o número de amostras")
