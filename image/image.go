@@ -132,7 +132,7 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 			return float64(i.Image.At(*index, outer).(color.Gray).Y)
 		}
 
-		DCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), limits{low: bounds.Min.X, high: bounds.Max.X},
+		Freq.DCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), Freq.Limits{Low: bounds.Min.X, High: bounds.Max.X},
 			accessFunc, assignFunc, func(val float64) {})
 	})
 
@@ -161,12 +161,12 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 		//don't get the DC value as maximum
 		if outer == 0 && inner == 0 {
-			DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+			Freq.DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), Freq.Limits{Low: bounds.Min.Y, High: bounds.Max.Y},
 				accessFunc, assignFunc, func(val float64) {})
 			return
 		}
 
-		DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+		Freq.DCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), Freq.Limits{Low: bounds.Min.Y, High: bounds.Max.Y},
 			accessFunc, assignFunc, minMaxFunc)
 	})
 
@@ -177,7 +177,7 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 		culling.Cull(cf, res.Data2D)
 		res.Filename += "CF_[" + strconv.Itoa(cf) + "]"
 	case optionButterwoth:
-		res.ApplyFilter(cf, order)
+		res.ApplyFilter(cf, order, func(x, y int) float64 { return math.Sqrt(float64(x*x + y*y)) })
 		res.Filename += "BUTTERWORTH_[" + strconv.Itoa(cf) + "," + strconv.Itoa(order) + "]"
 	}
 
@@ -206,7 +206,7 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 			return freq.Data2D[outer][*index]
 		}
 
-		IDCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), limits{low: bounds.Min.X, high: bounds.Max.X},
+		Freq.IDCT1d(inner, bounds.Max.X, math.Sqrt(2/float64(bounds.Max.X)), Freq.Limits{Low: bounds.Min.X, High: bounds.Max.X},
 			accessFunc, assignFunc)
 	})
 
@@ -229,7 +229,7 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 			}
 
 			//rawVal[Y][X] = val
-			freq.Data2D[inner][outer] = *val
+			i.Image.(*im.Gray).Set(outer, inner, color.Gray{Y: uint8(math.Round(*val))})
 		}
 
 		accessFunc := func(index *int) float64 {
@@ -237,66 +237,13 @@ func (i *Image) IDCT(freq *Freq.Frequencies) Freq.Wave {
 			return partial.Data2D[*index][outer]
 		}
 
-		IDCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), limits{low: bounds.Min.Y, high: bounds.Max.Y},
+		Freq.IDCT1d(inner, bounds.Max.Y, math.Sqrt(2/float64(bounds.Max.Y)), Freq.Limits{Low: bounds.Min.Y, High: bounds.Max.Y},
 			accessFunc, assignFunc)
 	})
 
-	i.Image = freq.ToGray()
 	i.Name = freq.Filename
 
 	return i
-}
-
-//DCT1d
-// k = index
-// Xk = color
-// ft = DCT's First Term
-func DCT1d(k, N int, ft float64, bounds limits, access func(*int) float64, assign func(*float64), minMaxFunc func(float64)) {
-
-	var (
-		pixConst         = math.Pi * float64(k) / float64(N)
-		Ck       float64 = 1
-		sum, res float64
-	)
-
-	if k == 0 {
-		Ck = math.Sqrt(1.0 / 2.0)
-	}
-
-	//DCT sum
-	for n := bounds.low; n < bounds.high; n++ {
-		sum += access(&n) * math.Cos(pixConst*(float64(n)+.5))
-	}
-
-	//constant part
-	res = ft * Ck * sum
-	assign(&res)
-
-	//get image min and max values
-	minMaxFunc(math.Abs(res))
-}
-
-func IDCT1d(n, N int, ft float64, bounds limits, access func(*int) float64, assign func(*float64)) {
-
-	var (
-		pixConst = (math.Pi / float64(N)) * (float64(n) + .5)
-		Ck       = math.Sqrt(1.0 / 2.0)
-		sum, res float64
-	)
-
-	//DCT sum
-	for k := bounds.low; k < bounds.high; k++ {
-		sum += access(&k) * math.Cos(pixConst*float64(k)) * Ck
-		Ck = 1
-	}
-
-	//constant part
-	res = ft * sum
-	assign(&res)
-}
-
-type limits struct {
-	low, high int
 }
 
 func histExpansion(min, max float64, hist [][]float64) {
@@ -367,21 +314,20 @@ func iterate(bounds im.Rectangle, closure func(int, int)) {
 	}
 }
 
-func SaveImage(im Image) error {
+func (i *Image) Save() error {
 
 	var (
-		suffix string
-		err    error
+		err error
 	)
 
-	f, err := os.Create(im.Name + suffix + "_" + strconv.Itoa(int(time.Now().Unix())) + ".png")
+	f, err := os.Create(i.Name + "_" + strconv.Itoa(int(time.Now().Unix())) + ".png")
 	if err != nil {
 		return err
 	}
 
 	defer f.Close()
 
-	err = png.Encode(f, im.Image)
+	err = png.Encode(f, i.Image)
 	if err != nil {
 		return err
 	}

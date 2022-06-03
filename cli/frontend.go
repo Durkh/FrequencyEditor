@@ -38,7 +38,7 @@ func Run() {
 
 		case "-A":
 			if i+1 > len(args) {
-				Exit("error: digite o caminho da imagem")
+				Exit("error: digite o caminho do audio")
 			}
 
 			a := audio.Audio{}
@@ -67,7 +67,7 @@ func Run() {
 		case "-F": //filter
 			operations = append(operations, 'F')
 
-			if i+1 > len(args) {
+			if i+1 > len(args)-1 {
 				Exit("error: digite a frequência de corte")
 			}
 
@@ -110,7 +110,7 @@ func Run() {
 					Exit(err.Error())
 				}
 
-				options["cutFrequency"] = &cf
+				options["cutFrequency"] = cf
 
 				delete(options, "histogram")
 			} else {
@@ -138,14 +138,21 @@ func Run() {
 
 		case 'F':
 
-			if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || float64(cf.(int)) >
-				math.Sqrt(math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.X), 2)+
-					math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.Y), 2))) {
+			switch wav.(type) {
+			case *audio.Audio:
+				if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || cf.(int) > wav.(*audio.Audio).Format.SampleRate) {
+					Exit("error: frequência de corte maior que a frequência máxima")
+				}
+			case *image.Image:
+				if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || float64(cf.(int)) >
+					math.Sqrt(math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.X), 2)+
+						math.Pow(float64(wav.(*image.Image).Image.Bounds().Max.Y), 2))) {
 
-				Exit("error: frequência de corte maior que o número de amostras")
+					Exit("error: frequência de corte maior que o número de amostras")
+				}
 			}
 
-			wav.(*image.Image).IDCT(wav.DCT(options))
+			wav.IDCT(wav.DCT(options))
 		case 'C':
 
 			if cf, ok := options["cutFrequency"]; ok && (cf.(int) < 0 || cf.(int) >
@@ -154,15 +161,15 @@ func Run() {
 				Exit("error: frequência de corte maior que o número de amostras")
 			}
 
-			wav.(*image.Image).IDCT(wav.DCT(options))
+			wav.IDCT(wav.DCT(options))
 
 		case 'Z':
-			wav.(*image.Image).IDCT(wav.DCT(options))
+			wav.IDCT(wav.DCT(map[string]interface{}{}))
 		}
 
 	}
 
-	if err = image.SaveImage(*wav.(*image.Image)); err != nil {
+	if err = wav.Save(); err != nil {
 		Exit(err.Error())
 	}
 
