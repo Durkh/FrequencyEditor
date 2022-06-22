@@ -172,6 +172,7 @@ func (i *Image) DCT(args map[string]interface{}) *Freq.Frequencies {
 
 	switch option {
 	case optionHistogram: //histogram expansion
+		res.Filename += "HISTOGRAM_[ DC-level: " + strconv.FormatFloat(res.Data2D[0][0], 'f', -1, 64) + " ]"
 		histExpansion(min, max, res.Data2D)
 	case optionCulling: //culling of frequencies data
 		culling.Cull(cf, res.Data2D)
